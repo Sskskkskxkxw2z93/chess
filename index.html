@@ -64,7 +64,7 @@ button:hover { background-color: #0099cc; }
 
 <script>
 // --- Setup ---
-const board = document.getElementById('chessboard');
+const boardEl = document.getElementById('chessboard');
 const overlay = document.getElementById('promotion-overlay');
 const movesList = document.getElementById('moves');
 const whiteTimerEl = document.getElementById('whiteTimer');
@@ -72,7 +72,7 @@ const blackTimerEl = document.getElementById('blackTimer');
 const undoBtn = document.getElementById('undoBtn');
 const redoBtn = document.getElementById('redoBtn');
 
-let initialBoard = [
+let board = [
     ["r","n","b","q","k","b","n","r"],
     ["p","p","p","p","p","p","p","p"],
     ["","","","","","","",""],
@@ -99,12 +99,16 @@ const pieceImages = {
 };
 
 // --- Game State ---
-let currentTurn="white", draggedPiece=null, draggedElement=null, dragOffset={x:0,y:0};
-let legalMovesHighlights=[], hoverSquare=null, lastMoveSquares=[], checkSquare=null;
-let moveHistory=[], historyStack=[], redoStack=[];
-let whiteTime=600, blackTime=600, clockInterval=null;
+let currentTurn = "white";
+let draggedPiece = null;
+let draggedElement = null;
+let moveHistory = [];
+let redoStack = [];
+let whiteTime = 600;
+let blackTime = 600;
+let clockInterval = null;
 
-// --- Helper Functions ---
+// --- Helpers ---
 function isWhite(piece){ return piece && piece===piece.toUpperCase(); }
 function isBlack(piece){ return piece && piece===piece.toLowerCase(); }
 function formatTime(sec){ const m=Math.floor(sec/60).toString().padStart(2,'0'); const s=(sec%60).toString().padStart(2,'0'); return `${m}:${s}`; }
@@ -112,43 +116,71 @@ function updateTimers(){ whiteTimerEl.textContent="White: "+formatTime(whiteTime
 function startClock(){ clearInterval(clockInterval); clockInterval=setInterval(()=>{ if(currentTurn==="white") whiteTime--; else blackTime--; updateTimers(); if(whiteTime<=0 || blackTime<=0) clearInterval(clockInterval); },1000); }
 
 // --- Draw Board ---
-function drawBoard(highlights=[]){
-    board.innerHTML="";
+function drawBoard(){
+    boardEl.innerHTML="";
     for(let i=0;i<8;i++){
         for(let j=0;j<8;j++){
             const square=document.createElement('div');
             square.className='square '+((i+j)%2===0?'white':'black');
             square.dataset.row=i; square.dataset.col=j;
-            if(highlights.some(pos=>pos[0]===i && pos[1]===j)) square.classList.add('highlight');
-            if(hoverSquare && hoverSquare[0]===i && hoverSquare[1]===j) square.classList.add('hover-highlight');
-            if(lastMoveSquares.some(pos=>pos[0]===i && pos[1]===j)) square.classList.add('last-move');
-            if(checkSquare && checkSquare[0]===i && checkSquare[1]===j) square.classList.add('in-check');
-            if(initialBoard[i][j]!==""){
-                const piece=document.createElement('img');
-                piece.className="piece";
-                piece.src=pieceImages[initialBoard[i][j]];
-                piece.dataset.row=i; piece.dataset.col=j; piece.dataset.type=initialBoard[i][j];
-                piece.style.top=(i*64)+"px"; piece.style.left=(j*64)+"px";
-                piece.addEventListener('mousedown', mouseDown);
-                board.appendChild(piece);
+            boardEl.appendChild(square);
+
+            const piece=board[i][j];
+            if(piece){
+                const img=document.createElement('img');
+                img.src=pieceImages[piece];
+                img.className="piece";
+                img.dataset.row=i; img.dataset.col=j; img.dataset.type=piece;
+                img.style.top=(i*64)+"px"; img.style.left=(j*64)+"px";
+                img.addEventListener('mousedown', mouseDown);
+                boardEl.appendChild(img);
             }
         }
     }
     updateHistory();
 }
 
-// --- Legal Moves & Rules ---
-function getLegalMoves(r,c){
-    const piece=initialBoard[r][c];
-    if(!piece) return [];
-    let moves=[];
-    const dir=isWhite(piece)?-1:1;
-    // Pawn moves
-    if(piece.toUpperCase()==="P"){
-        if(initialBoard[r+dir] && initialBoard[r+dir][c]==="") moves.push([r+dir,c]);
-        if((r==6 && isWhite(piece)) || (r==1 && isBlack(piece))){ if(initialBoard[r+dir*2][c]==="") moves.push([r+dir*2,c]); }
-        if(initialBoard[r+dir] && c>0 && initialBoard[r+dir][c-1] && isWhite(piece)!==isWhite(initialBoard[r+dir][c-1])) moves.push([r+dir,c-1]);
-        if(initialBoard[r+dir] && c<7 && initialBoard[r+dir][c+1] && isWhite(piece)!==isWhite(initialBoard[r+dir][c+1])) moves.push([r+dir,c+1]);
+function updateHistory(){
+    movesList.innerHTML="";
+    moveHistory.forEach(m=>{ const li=document.createElement('li'); li.textContent=m; movesList.appendChild(li); });
+}
+
+// --- Drag & Drop ---
+function mouseDown(e){
+    draggedElement = e.target;
+    draggedPiece = {row:+draggedElement.dataset.row, col:+draggedElement.dataset.col};
+    document.addEventListener("mousemove", mouseMove);
+    document.addEventListener("mouseup", mouseUp);
+}
+
+function mouseMove(e){
+    draggedElement.style.left = e.pageX - boardEl.getBoundingClientRect().left - 32 + "px";
+    draggedElement.style.top = e.pageY - boardEl.getBoundingClientRect().top - 32 + "px";
+}
+
+function mouseUp(e){
+    const col = Math.floor((e.pageX - boardEl.getBoundingClientRect().left)/64);
+    const row = Math.floor((e.pageY - boardEl.getBoundingClientRect().top)/64);
+    if(row>=0 && row<8 && col>=0 && col<8){
+        board[row][col] = board[draggedPiece.row][draggedPiece.col];
+        board[draggedPiece.row][draggedPiece.col] = "";
+        moveHistory.push(`${board[row][col]}: ${draggedPiece.row},${draggedPiece.col} → ${row},${col}`);
     }
-    // Knight moves
-    if(piece.toUpperCase()==="
+    draggedElement = null;
+    draggedPiece = null;
+    document.removeEventListener("mousemove", mouseMove);
+    document.removeEventListener("mouseup", mouseUp);
+    drawBoard();
+}
+
+// --- Buttons ---
+undoBtn.addEventListener("click", ()=>{ alert("Undo not implemented yet"); });
+redoBtn.addEventListener("click", ()=>{ alert("Redo not implemented yet"); });
+
+// --- Init ---
+drawBoard();
+updateTimers();
+startClock();
+</script>
+</body>
+</html>
